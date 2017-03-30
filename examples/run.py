@@ -12,26 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from gcloud import datastore, pubsub
+from gcloud import pubsub
 import psq
-import tasks
 
 PROJECT_ID = 'your-project-id'
 
 pubsub_client = pubsub.Client(project=PROJECT_ID)
-datastore_client = datastore.Client(project=PROJECT_ID)
 
-q = psq.Queue(
-    pubsub_client,
-    storage=psq.DatastoreStorage(datastore_client))
-
+q = psq.Queue(pubsub_client)
 
 def main():
-    q.enqueue(tasks.slow_task)
-    q.enqueue(tasks.print_task, "Hello, World")
-    r = q.enqueue(tasks.adder, 1, 5)
-    print(r.result(timeout=10))
-
+    q.enqueue("Hello, World")
 
 if __name__ == '__main__':
     main()
