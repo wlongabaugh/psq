@@ -1,7 +1,7 @@
 psq - Cloud Pub/Sub Task Queue for Python.
 ==========================================
 
-This is a super-simplied version for just putting a thin wrapper on Google Cloud Pub/Sub
+This is a super-simplified version for just putting a thin wrapper on Google Cloud Pub/Sub
 
 Licensing
 ---------
