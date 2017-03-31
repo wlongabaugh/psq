@@ -31,8 +31,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from google.cloud import pubsub
-import google.cloud.exceptions
+from gcloud import pubsub
+#import google.cloud.exceptions
 from .task import Task
 import sys
 
@@ -80,7 +80,7 @@ class Queue(object):
         if not topic.exists():
             try:
                 topic.create()
-            except google.cloud.exceptions.Conflict:
+            except: # google.cloud.exceptions.Conflict:
                 # Another process created the topic before us, ignore.
                 pass
 
@@ -98,7 +98,7 @@ class Queue(object):
         if not subscription.exists():
             try:
                 subscription.create()
-            except google.cloud.exceptions.Conflict:
+            except: # google.cloud.exceptions.Conflict:
                 # Another worker created the subscription before us, ignore.
                 pass
 
