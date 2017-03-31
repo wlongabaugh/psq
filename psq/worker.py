@@ -46,7 +46,7 @@ class Worker(object):
             wait_exponential_multiplier=1000, wait_exponential_max=10000,
             retry_on_exception=lambda e: not isinstance(e, KeyboardInterrupt))
         def inner():
-            return self.queue.dequeue(max=1, block=True)
+            return self.queue.dequeue()
         return inner()
 
     def listen(self):
