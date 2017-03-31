@@ -39,7 +39,7 @@ from psq.worker import Worker
 
 PROJECT_ID = 'your-project-id'
 
-def main(queue):
+def main():
     pubsub_client = pubsub.Client(project=PROJECT_ID)
     queue = Queue(pubsub_client)
     worker = Worker(queue)
