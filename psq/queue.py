@@ -1,3 +1,6 @@
+#
+# Original implementation:
+#
 # Copyright 2015 Google Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,42 +14,63 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-from __future__ import absolute_import
-
-from contextlib import contextmanager
-import logging
-from uuid import uuid4
+#
+# Additional Material:
+#
+# Copyright 2017, Institute for Systems Biology
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 from google.cloud import pubsub
 import google.cloud.exceptions
-
-from .globals import queue_context
-from .storage import Storage
-from .task import Task, TaskResult
-from .utils import (_check_for_thread_safety, dumps, measure_time, unpickle,
-                    UnpickleError)
-
-
-logger = logging.getLogger(__name__)
+from .task import Task
+import sys
 
 PUBSUB_OBJECT_PREFIX = 'psq'
 
-
 class Queue(object):
-    def __init__(self, pubsub, name='default', storage=None,
-                 extra_context=None, async=True):
-        self._async = async
+    def __init__(self, pubsub, name='default'):
         self.name = name
-
-        if self._async:
-            _check_for_thread_safety(pubsub)
-            self.pubsub = pubsub
-            self.topic = self._get_or_create_topic()
-
-        self.storage = storage or Storage()
+        self._check_for_thread_safety(pubsub)
+        self.pubsub = pubsub
+        self.topic = self._get_or_create_topic()
         self.subscription = None
-        self.extra_context = extra_context if extra_context else dummy_context
+
+    def _check_for_thread_safety(self, client):
+        try:
+            # Is this client's module using grpc/gax?
+            client_module_name = client.__module__
+            client_module = sys.modules[client_module_name]
+            if getattr(client_module, '_USE_GAX', True):
+                return
+
+            connection_module_name = client.connection.__module__
+            connection_module = sys.modules[connection_module_name]
+
+            if getattr(connection_module, '_USE_GRPC', True):
+                return
+           # Is the connection is using httplib2shim?
+            if client.connection.http.__class__.__module__ == 'httplib2shim':
+                return
+
+            raise ValueError(
+                'Client object {} is not threadsafe. psq requires clients to be '
+                'threadsafe. You can either ensure grpc is installed or use '
+                'httplib2shim.'.format(client))
+
+        except (KeyError, AttributeError):
+            pass
+
 
     def _get_or_create_topic(self):
         topic_name = '{}-{}'.format(PUBSUB_OBJECT_PREFIX, self.name)
@@ -54,7 +78,6 @@ class Queue(object):
         topic = self.pubsub.topic(topic_name)
 
         if not topic.exists():
-            logger.info("Creating topic {}".format(topic_name))
             try:
                 topic.create()
             except google.cloud.exceptions.Conflict:
@@ -73,8 +96,6 @@ class Queue(object):
             subscription_name, topic=self.topic)
 
         if not subscription.exists():
-            logger.info("Creating shared subscription {}".format(
-                subscription_name))
             try:
                 subscription.create()
             except google.cloud.exceptions.Conflict:
@@ -83,38 +104,14 @@ class Queue(object):
 
         return subscription
 
-    def enqueue(self, f, *args, **kwargs):
-        """Enqueues a function for the task queue to execute."""
-        task = Task(uuid4().hex, f, args, kwargs)
-        self.storage.put_task(task)
-        return self.enqueue_task(task)
+    def enqueue(self, task):
+        self.topic.publish(task.getMsg())
 
-    def enqueue_task(self, task):
-        """Enqueues a task directly. This is used when a task is retried or if
-        a task was manually created.
-
-        Note that this does not store the task.
-        """
-        data = dumps(task)
-
-        if self._async:
-            self.topic.publish(data)
-            logger.info('Task {} queued.'.format(task.id))
-        else:
-            logger.info('Executing task {} synchronously.'.format(task.id))
-            with measure_time() as summary, self.queue_context():
-                task.execute(queue=self)
-                summary(task.summary())
-
-        return TaskResult(task.id, self)
-
-    def dequeue(self, max=1, block=False):
-        """Returns tasks to be consumed by a worker."""
+    def dequeue(self):
         if not self.subscription:
             self.subscription = self._get_or_create_subscription()
 
-        messages = self.subscription.pull(
-            return_immediately=not block, max_messages=max)
+        messages = self.subscription.pull(return_immediately=False, max_messages=1)
 
         if not messages:
             return None
@@ -123,30 +120,10 @@ class Queue(object):
 
         tasks = []
         for x in messages:
-            try:
-                task = unpickle(x[1].data)
-                tasks.append(task)
-            except UnpickleError:
-                logger.exception('Failed to unpickle task {}.'.format(x[0]))
+            task = Task(x[1].data, x[1].messageID)
+            tasks.append(task)
 
         self.subscription.acknowledge(ack_ids)
 
         return tasks
 
-    def cleanup(self):
-        """Does nothing for this queue, but other queues types may use this to
-        perform clean-up after listening for tasks."""
-        pass
-
-    def queue_context(self):
-        """
-        Returns a context manager that sets this queue as the current_queue
-        global. Similar to flask's app.app_context. This is used by the workers
-        to make the global available inside of task functions.
-        """
-        return queue_context(self)
-
-
-@contextmanager
-def dummy_context():
-    yield

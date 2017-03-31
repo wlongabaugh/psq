@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 #
 # Original implementation:
 #
@@ -31,16 +33,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-class Task(object):
-    def __init__(self, msg, id=None):
-        self.id = id
-        self.msg = msg
+from gcloud import pubsub
+from psq.queue import Queue
+from psq.task import Task
 
-    def getID(self):
-        return self.id
+def main():
+    PROJECT_ID = 'your-project-id'
+    pubsub_client = pubsub.Client(project=PROJECT_ID)
+    q = Queue(pubsub_client)
+    for i in xrange(10):
+        task = Task("Hello World A {}".format(i));
+        q.enqueue(task)
+    task = Task("Real Message");
+    q.enqueue(task)
+    for _ in xrange(10):
+        task = Task("Hello World B {}".format(i));
+        q.enqueue(task)
 
-    def getMsg(self):
-        return self.msg
-
-
-
+if __name__ == '__main__':
+    main()
