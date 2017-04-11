@@ -20,6 +20,8 @@ from uuid import uuid4
 
 from google.cloud import pubsub
 import google.cloud.exceptions
+import time
+from google.gax.errors import RetryError
 
 from .globals import queue_context
 from .storage import Storage
@@ -113,8 +115,20 @@ class Queue(object):
         if not self.subscription:
             self.subscription = self._get_or_create_subscription()
 
-        messages = self.subscription.pull(
-            return_immediately=not block, max_messages=max)
+        reading = True
+        try_count = 10;
+        while reading and try_count > 0:
+            try:
+                logger.info('Going into pull at {0}'.format(time.gmtime()))
+                messages = self.subscription.pull(
+                    return_immediately=not block, max_messages=max)
+                reading = False
+            except RetryError:
+                logger.info('Retry error in pull at {0}:'.format(time.gmtime()))
+                try_count -= 1
+
+        if try_count <= 0:
+            return None
 
         if not messages:
             return None
