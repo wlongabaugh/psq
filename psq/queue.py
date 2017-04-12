@@ -119,11 +119,11 @@ class Queue(object):
         try_count = 10;
         while reading and try_count > 0:
             try:
-                logger.info('Going into pull at {0}'.format(time.gmtime()))
                 messages = self.subscription.pull(
                     return_immediately=not block, max_messages=max)
                 reading = False
             except RetryError:
+                time.sleep(30)
                 logger.info('Retry error in pull at {0}:'.format(time.gmtime()))
                 try_count -= 1
 
